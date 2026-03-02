@@ -909,7 +909,7 @@ wheels = [
 ]
 
 [[package]]
-name = "mobox"
+name = "agentchat"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

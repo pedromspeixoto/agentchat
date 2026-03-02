@@ -85,7 +85,7 @@ const KIND_META: Record<ArtifactKind, { label: string; color: string; icon: Reac
 };
 
 function ArtifactCard({ artifact }: { artifact: Artifact }) {
-  const meta = KIND_META[artifact.kind];
+  const meta = KIND_META[artifact.kind] ?? KIND_META['other'];
   return (
     <div className="artifact-card">
       <div className="artifact-icon" style={{ color: meta.color, background: `${meta.color}14` }}>
@@ -159,7 +159,7 @@ function ArtifactsPanel({ artifacts, onClose }: { artifacts: Artifact[]; onClose
 // ── Artifact inline card (appears in chat feed when an artifact is created) ───
 
 function ArtifactInlineCard({ artifact, onView }: { artifact: Artifact; onView: () => void }) {
-  const meta = KIND_META[artifact.kind];
+  const meta = KIND_META[artifact.kind] ?? KIND_META['other'];
   return (
     <div className="artifact-inline-card">
       <div className="artifact-inline-shimmer" />

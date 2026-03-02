@@ -96,16 +96,33 @@ make web
 - Copy `api/.env.example` to `api/.env` and set your database and API keys as needed.
 - The API expects PostgreSQL (default in `docker-compose.yaml`: user/pass/db `agentchat`, port `5432`).
 
+## Agent image
+
+The agent runs inside a Docker container on Modal. The image is built for `linux/amd64` and tagged with the short git SHA so each build is immutable and traceable.
+
+```bash
+# Build, push, and update agent/agent.yaml to the new tag
+make agent
+```
+
+After running `make agent`, `agent/agent.yaml` is updated in-place to point to the new tag (e.g. `pedropeixoto6/agentchat-claude-sandbox:96efe3a`). Commit the updated `agent.yaml` alongside your code changes so the deployed API always pulls the matching image.
+
+To override the tag manually:
+
+```bash
+make agent AGENT_TAG=my-tag
+```
+
 ## Commands
 
-
-| Command           | Description               |
-| ----------------- | ------------------------- |
-| `make setup`      | Install API and web deps  |
-| `make infra`      | Start Docker (PostgreSQL) |
-| `make infra-down` | Stop Docker services      |
-| `make migrate`    | Run DB migrations         |
-| `make api`        | Run FastAPI (port 8080)   |
-| `make web`        | Run Vite dev server       |
+| Command           | Description                                      |
+| ----------------- | ------------------------------------------------ |
+| `make setup`      | Install API and web deps                         |
+| `make infra`      | Start Docker (PostgreSQL)                        |
+| `make infra-down` | Stop Docker services                             |
+| `make migrate`    | Run DB migrations                                |
+| `make api`        | Run FastAPI (port 8080)                          |
+| `make web`        | Run Vite dev server                              |
+| `make agent`      | Build + push agent image, update agent/agent.yaml |
 
 

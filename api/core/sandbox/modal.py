@@ -99,10 +99,12 @@ class ModalClient:
             logger.info(f"Sandbox {session_id} not found, creating new")
 
         if sandbox is None:
+            # New container — don't pass SDK_SESSION_ID; the old session doesn't exist here.
+            # TODO - fix the bug where sandbox breaks if the session id is provided to resume
+            # History is provided via history.txt instead.
             env = {"PYTHONUNBUFFERED": "1"}
-            if sdk_session_id:
-                env["SDK_SESSION_ID"] = sdk_session_id
-
+            #if sdk_session_id:
+            #    env["SDK_SESSION_ID"] = sdk_session_id
             secret = modal.Secret.from_dict({**env_vars, **env}) if (env_vars or env) else None
             sandbox = await modal.Sandbox.create.aio(
                 name=session_id,

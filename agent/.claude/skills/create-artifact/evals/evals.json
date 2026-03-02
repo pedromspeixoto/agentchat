@@ -1,0 +1,43 @@
+{
+  "skill_name": "create-artifact",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Generate a CSV file showing estimated quarterly tax payments for someone who's self-employed, earned $80,000 so far this year, is in the 22% income tax bracket, and also owes self-employment tax (15.3%). Break it down by quarter.",
+      "expected_output": "Calls mcp__artifact_tools__create_artifact with format=csv, includes a header row, uses a descriptive snake_case filename, and confirms what was created.",
+      "files": [],
+      "expectations": [
+        "Simulates or references calling mcp__artifact_tools__create_artifact rather than using the Write tool for the user-facing file",
+        "Uses format 'csv' (not md or txt)",
+        "The CSV content includes a header row as the first line",
+        "The filename is lowercase with underscores and ends in .csv",
+        "Includes a confirmation message describing the artifact after creation"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Write me a markdown guide on the top 5 home office deduction mistakes freelancers make and how to avoid them. I want to keep this for reference.",
+      "expected_output": "Calls mcp__artifact_tools__create_artifact with format=md, produces structured markdown with headings and lists, uses descriptive filename, confirms afterward.",
+      "files": [],
+      "expectations": [
+        "Simulates or references calling mcp__artifact_tools__create_artifact rather than using the Write tool",
+        "Uses format 'md' (not csv or txt)",
+        "The content uses markdown structure — at least one heading (#) and at least one list",
+        "The filename is lowercase with underscores and ends in .md",
+        "Includes a confirmation message describing the artifact after creation"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Write me a Python script I can run locally to estimate my self-employment tax liability. Just save it as a helper script — I'll run it from my terminal.",
+      "expected_output": "Uses the Write tool (not create_artifact) because the user explicitly wants a runnable local script — an internal/executable file, not a user-facing document.",
+      "files": [],
+      "expectations": [
+        "Does NOT call mcp__artifact_tools__create_artifact — uses Write or Bash instead",
+        "Creates a Python (.py) file with working code",
+        "The script includes self-employment tax calculation logic (roughly 15.3%)",
+        "Does not treat this as a downloadable artifact for the UI panel"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+[project]
+name = "claude-hello-world"
+version = "1.0.0"
+description = "A simple agent demonstrating Claude Agent SDK capabilities"
+requires-python = ">=3.12"
+dependencies = [
+    "claude-agent-sdk>=0.1.44",
+]
+
+[project.optional-dependencies]
+dev = [
+    "python-dotenv",
+]
+
+[project.scripts]
+run-agent = "run_agent:main"

@@ -1,0 +1,18 @@
+# Claude Hello World Agent
+name: Claude Hello World Agent
+description: A simple agent that demonstrates basic Claude Agent SDK capabilities
+purpose: Demonstrate a basic agent with a Claude workflow and skill.
+
+# Docker registry URL for prebuilt image
+image: docker.io/pedropeixoto6/mobox-claude-hello-world:v1.0.3
+
+# Entrypoint - command to execute in the sandbox
+entrypoint: ["python", "/app/run_agent.py"]
+
+# Environment variables this agent needs (values come from server env)
+env_vars:
+  - ANTHROPIC_API_KEY
+
+# Sandbox lifecycle settings
+timeout: 600        # 10 min max lifetime
+idle_timeout: 120   # 2 min idle before termination

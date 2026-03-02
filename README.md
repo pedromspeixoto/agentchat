@@ -2,6 +2,8 @@
 
 Chat application with Claude Agent SDK for intelligence, session management and sandbox orchestration (Modal or Subprocess) using FastAPI, and a React (powered by Vite) frontend.
 
+![Demo](assets/demo.gif)
+
 ## Architecture
 
 ```

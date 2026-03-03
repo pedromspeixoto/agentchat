@@ -1,0 +1,45 @@
+<svg width="1200" height="320" viewBox="0 0 1200 320" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- subtle neon glow -->
+    <filter id="glow">
+      <feGaussianBlur stdDeviation="4" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- background -->
+  <rect width="1200" height="320" />
+
+  <!-- centered title -->
+  <text x="600" y="160"
+        font-family="Inter, Arial, sans-serif"
+        font-size="120"
+        font-weight="700"
+        text-anchor="middle">
+    <tspan fill="#e5e5e5">agent</tspan>
+    <tspan fill="none" stroke="#00ff88" stroke-width="1" filter="url(#glow)">chat</tspan>
+  </text>
+
+  <!-- powered by badge -->
+  <g transform="translate(600, 235)">
+    <rect x="-250" y="-22"
+          width="500"
+          height="44"
+          rx="22"
+          fill="#161b18"
+          stroke="#2a2f2c" />
+
+   <circle cx="-210" cy="0" r="6" fill="#00ff88"/>
+
+    <text x="20" y="6"
+          font-family="Inter, Arial, sans-serif"
+          font-size="18"
+          fill="#9ca3af"
+          text-anchor="middle">
+      powered by claude agent sdk
+    </text>
+  </g>
+</svg>

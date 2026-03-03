@@ -622,15 +622,15 @@ function Landing({ onStart }: { onStart: () => void }) {
       <div className="landing-bg-glow" />
       <div className="landing-grid" />
       <div className="landing-inner">
-        <div className="landing-badge">
-          <span className="landing-badge-dot" />
-          Powered by Claude AI
-        </div>
         <h1 className="landing-headline">
           <span className="headline-light">Your</span>
           <span className="headline-strong">Agent</span>
           <span className="headline-outline">Chat</span>
         </h1>
+        <div className="landing-badge">
+          <span className="landing-badge-dot" />
+          Powered by Claude Agent SDK
+        </div>
         <p className="landing-sub">
           A powerful chat interface powered by the Claude Agent SDK.<br />
           Sessions, tools, artifacts, streaming — all wired up.

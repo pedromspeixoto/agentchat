@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/logo.png" alt="agentchat logo" width="400" />
+  <img src="assets/banner.svg" alt="agent chat - powered by claude agent sdk" width="100%" />
 </p>
 
 Chat application with Claude Agent SDK for intelligence, session management and sandbox orchestration (Modal or Subprocess) using FastAPI, and a React (powered by Vite) frontend.

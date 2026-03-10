@@ -13,7 +13,6 @@ logger = get_logger(__name__)
 
 DEFAULT_TIMEOUT = 10 * 60
 DEFAULT_IDLE_TIMEOUT = 2 * 60
-MODAL_APP_NAME = "agentchat"
 
 
 class ModalClient:
@@ -22,21 +21,6 @@ class ModalClient:
     def __init__(self):
         self.app = None
         self._initialized = False
-
-    def _read_stderr_sync(self, process, queue: asyncio.Queue, loop):
-        """Read process stderr in a thread and push error dicts to queue."""
-        try:
-            for chunk in process.stderr:
-                for line in chunk.split("\n"):
-                    line = line.strip()
-                    if not line:
-                        continue
-                    logger.error(f"Agent stderr: {line}")
-                    asyncio.run_coroutine_threadsafe(
-                        queue.put({"__type": "stderr", "content": line}), loop
-                    )
-        except Exception as e:
-            logger.error(f"Error streaming process stderr: {e}")
 
     def _read_stdout_sync(self, process, queue: asyncio.Queue, loop):
         """Read process stdout in a thread and push dicts to queue."""
@@ -74,7 +58,7 @@ class ModalClient:
         if settings.MODAL_TOKEN_ID and settings.MODAL_TOKEN_SECRET:
             os.environ["MODAL_TOKEN_ID"] = settings.MODAL_TOKEN_ID
             os.environ["MODAL_TOKEN_SECRET"] = settings.MODAL_TOKEN_SECRET
-        self.app = await modal.App.lookup.aio(MODAL_APP_NAME, create_if_missing=True)
+        self.app = await modal.App.lookup.aio("mobox-agents", create_if_missing=True)
         self._initialized = True
         logger.info("Modal client initialized")
 
@@ -90,7 +74,7 @@ class ModalClient:
     ) -> modal.Sandbox:
         sandbox = None
         try:
-            sandbox = await modal.Sandbox.from_name.aio(MODAL_APP_NAME, session_id)
+            sandbox = await modal.Sandbox.from_name.aio("mobox-agents", session_id)
             exit_code = await sandbox.poll.aio()
             if exit_code is not None:
                 logger.info(f"Sandbox {session_id} finished (exit={exit_code}), creating new")
@@ -99,12 +83,10 @@ class ModalClient:
             logger.info(f"Sandbox {session_id} not found, creating new")
 
         if sandbox is None:
-            # New container — don't pass SDK_SESSION_ID; the old session doesn't exist here.
-            # TODO - fix the bug where sandbox breaks if the session id is provided to resume
-            # History is provided via history.txt instead.
             env = {"PYTHONUNBUFFERED": "1"}
-            #if sdk_session_id:
-            #    env["SDK_SESSION_ID"] = sdk_session_id
+            if sdk_session_id:
+                env["SDK_SESSION_ID"] = sdk_session_id
+
             secret = modal.Secret.from_dict({**env_vars, **env}) if (env_vars or env) else None
             sandbox = await modal.Sandbox.create.aio(
                 name=session_id,
@@ -156,7 +138,6 @@ class ModalClient:
             process = await sandbox.exec.aio(*command)
             queue: asyncio.Queue = asyncio.Queue()
             loop = asyncio.get_event_loop()
-            loop.run_in_executor(None, self._read_stderr_sync, process, queue, loop)
             loop.run_in_executor(None, self._read_stdout_sync, process, queue, loop)
 
             while True:
@@ -173,7 +154,7 @@ class ModalClient:
         """Read a file from the Modal sandbox filesystem."""
         await self.initialize()
         try:
-            sandbox = await modal.Sandbox.from_name.aio(MODAL_APP_NAME, session_id)
+            sandbox = await modal.Sandbox.from_name.aio("mobox-agents", session_id)
             f = await sandbox.open.aio(path, "rb")
             data = await f.read.aio()
             await f.close.aio()

@@ -6,6 +6,7 @@ from core.config import settings
 from core.logging import get_logger
 from core.sandbox.subprocess import SubprocessClient
 from core.sandbox.modal import ModalClient
+from core.sandbox.firecracker import FirecrackerClient
 
 logger = get_logger(__name__)
 
@@ -13,6 +14,7 @@ logger = get_logger(__name__)
 class SandboxType(Enum):
     SUBPROCESS = "subprocess"
     MODAL = "modal"
+    FIRECRACKER = "firecracker"
 
 
 class SandboxClient(Protocol):
@@ -40,4 +42,6 @@ class SandboxClient(Protocol):
 def get_sandbox_client() -> SandboxClient:
     if settings.SANDBOX_BACKEND == SandboxType.MODAL.value:
         return ModalClient()
+    if settings.SANDBOX_BACKEND == SandboxType.FIRECRACKER.value:
+        return FirecrackerClient()
     return SubprocessClient()

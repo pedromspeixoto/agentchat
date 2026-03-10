@@ -36,15 +36,30 @@ class Settings(BaseSettings):
     POSTGRES_USER: str = "agentchat"
     POSTGRES_PASSWORD: str = "agentchat"
     
-    # Sandbox backend: "subprocess" (default) or "modal"
+    # Sandbox backend: "subprocess" (default), "modal", or "firecracker"
     SANDBOX_BACKEND: str = "subprocess"
 
     # Modal Configuration (for sandbox execution)
     MODAL_TOKEN_ID: str = ""
     MODAL_TOKEN_SECRET: str = ""
-    
-    # Anthropic API key
+
+    # Firecracker Configuration (for microVM sandbox execution)
+    FIRECRACKER_ORCHESTRATOR_URL: str = ""
+    FIRECRACKER_API_KEY: str = ""
+
+    # Anthropic Configuration
+    # Option A – Direct Anthropic API: set ANTHROPIC_API_KEY.
+    # Option B – Azure AI Foundry: set CLAUDE_CODE_USE_FOUNDRY=1, ANTHROPIC_FOUNDRY_BASE_URL,
+    #            ANTHROPIC_FOUNDRY_API_KEY, and optionally the model name overrides.
     ANTHROPIC_API_KEY: str = ""
+
+    # Azure AI Foundry
+    CLAUDE_CODE_USE_FOUNDRY: str = ""
+    ANTHROPIC_FOUNDRY_BASE_URL: str = ""  # e.g. https://<resource>.services.ai.azure.com/anthropic
+    ANTHROPIC_FOUNDRY_API_KEY: str = ""
+    ANTHROPIC_DEFAULT_HAIKU_MODEL: str = ""
+    ANTHROPIC_DEFAULT_SONNET_MODEL: str = ""
+    ANTHROPIC_DEFAULT_OPUS_MODEL: str = ""
 
     # TAVILY API key
     TAVILY_API_KEY: str = ""

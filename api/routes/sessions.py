@@ -31,7 +31,7 @@ async def list_sessions(
     logger.info("Fetching all chat sessions")
     try:
         result = await db.execute(
-            select(ChatSession).order_by(ChatSession.created_at.desc())
+            select(ChatSession).order_by(ChatSession.updated_at.desc())
         )
         sessions = result.scalars().all()
         

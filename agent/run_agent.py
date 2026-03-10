@@ -4,8 +4,6 @@ import asyncio
 import dataclasses
 import json
 import os
-import shutil
-import subprocess
 import sys
 import uuid
 from typing import Any
@@ -129,21 +127,18 @@ async def create_artifact(args: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _diagnose_claude() -> None:
-    """Print claude binary location and version to stderr for debugging."""
-    path = shutil.which("claude")
-    print(f"[diag] claude binary: {path}", file=sys.stderr, flush=True)
-    if path:
-        result = subprocess.run([path, "--version"], capture_output=True, text=True)
-        print(f"[diag] claude --version stdout: {result.stdout.strip()}", file=sys.stderr, flush=True)
-        print(f"[diag] claude --version stderr: {result.stderr.strip()}", file=sys.stderr, flush=True)
-        print(f"[diag] claude --version exit: {result.returncode}", file=sys.stderr, flush=True)
-
-
 async def run():
-    _diagnose_claude()
-    if not os.environ.get("ANTHROPIC_API_KEY"):
-        print(json.dumps({"__type": "error", "message": "ANTHROPIC_API_KEY not set"}), flush=True)
+    has_direct = bool(os.environ.get("ANTHROPIC_API_KEY"))
+    has_foundry = bool(os.environ.get("CLAUDE_CODE_USE_FOUNDRY")) and bool(os.environ.get("ANTHROPIC_FOUNDRY_API_KEY"))
+    if not has_direct and not has_foundry:
+        print(json.dumps({
+            "__type": "error",
+            "message": (
+                "No Anthropic credentials found. "
+                "Set ANTHROPIC_API_KEY for direct access, or "
+                "CLAUDE_CODE_USE_FOUNDRY=1 + ANTHROPIC_FOUNDRY_API_KEY + ANTHROPIC_FOUNDRY_BASE_URL for Azure AI Foundry."
+            ),
+        }), flush=True)
         sys.exit(1)
 
     prompt = _read_file("prompt.txt")

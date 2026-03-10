@@ -1,5 +1,5 @@
 [project]
-name = "agentchat"
+name = "mobox"
 version = "0.1.0"
 description = "Run multiple different AI agents in isolated sandboxes"
 readme = "README.md"
@@ -13,6 +13,7 @@ dependencies = [
     "alembic>=1.14.0",
     "pyyaml>=6.0.0",
     "modal>=0.73.0",
+    "httpx>=0.27.0",
     "minio>=7.2.0",
     "pytest>=8.0.0",
 ]

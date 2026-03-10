@@ -1,7 +1,13 @@
-"""Local subprocess sandbox - runs agents with uv run."""
+"""Local subprocess sandbox - runs agents with uv run.
+
+Uses subprocess.Popen + threads instead of asyncio.create_subprocess_exec
+so it works on Windows without requiring ProactorEventLoop.
+"""
 import asyncio
 import json
 import os
+import subprocess
+import threading
 from pathlib import Path
 from typing import AsyncIterator
 
@@ -11,40 +17,39 @@ from core.logging import get_logger
 logger = get_logger(__name__)
 
 
-async def _read_stdout(process, queue: asyncio.Queue) -> None:
-    """Read process stdout and push parsed JSON dicts to queue."""
+def _read_stdout_thread(
+    proc: subprocess.Popen,
+    queue: asyncio.Queue,
+    loop: asyncio.AbstractEventLoop,
+) -> None:
+    """Read process stdout line-by-line and push parsed JSON dicts to queue."""
     try:
-        if process.stdout:
-            while True:
-                line = await process.stdout.readline()
-                if not line:
-                    break
-                line = line.decode("utf-8", errors="replace").strip()
-                if not line:
-                    continue
-                try:
-                    await queue.put(json.loads(line))
-                except json.JSONDecodeError:
-                    await queue.put({"__type": "raw", "content": line})
+        for raw_line in proc.stdout:
+            line = raw_line.decode("utf-8", errors="replace").strip()
+            if not line:
+                continue
+            try:
+                loop.call_soon_threadsafe(queue.put_nowait, json.loads(line))
+            except json.JSONDecodeError:
+                loop.call_soon_threadsafe(queue.put_nowait, {"__type": "raw", "content": line})
     except Exception as e:
         logger.error(f"Error reading agent stdout: {e}")
-        await queue.put({"__type": "error", "message": str(e)})
+        loop.call_soon_threadsafe(queue.put_nowait, {"__type": "error", "message": str(e)})
     finally:
-        await queue.put(None)
+        loop.call_soon_threadsafe(queue.put_nowait, None)
 
 
-async def _drain_stderr(process, stderr_lines: list[str]) -> None:
+def _drain_stderr_thread(
+    proc: subprocess.Popen,
+    stderr_lines: list[str],
+) -> None:
     """Drain stderr to prevent pipe buffer blocking."""
     try:
-        if process.stderr:
-            while True:
-                line = await process.stderr.readline()
-                if not line:
-                    break
-                text = line.decode("utf-8", errors="replace").rstrip()
-                if text:
-                    stderr_lines.append(text)
-                    logger.info("Agent stderr: %s", text)
+        for raw_line in proc.stderr:
+            text = raw_line.decode("utf-8", errors="replace").rstrip()
+            if text:
+                stderr_lines.append(text)
+                logger.info("Agent stderr: %s", text)
     except Exception as e:
         logger.debug("Stopped draining agent stderr: %s", e)
 
@@ -86,13 +91,13 @@ class SubprocessClient:
         logger.info(f"Executing: {' '.join(cmd)} in {AGENT_DIR}")
 
         try:
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
+            process = subprocess.Popen(
+                cmd,
                 cwd=str(AGENT_DIR),
                 env=resolved_env,
-                stdin=asyncio.subprocess.PIPE,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
             )
         except FileNotFoundError:
             yield {"__type": "error", "message": f"Could not execute: {cmd}"}
@@ -100,8 +105,16 @@ class SubprocessClient:
 
         queue: asyncio.Queue = asyncio.Queue()
         stderr_lines: list[str] = []
-        read_task = asyncio.create_task(_read_stdout(process, queue))
-        stderr_task = asyncio.create_task(_drain_stderr(process, stderr_lines))
+        loop = asyncio.get_running_loop()
+
+        stdout_thread = threading.Thread(
+            target=_read_stdout_thread, args=(process, queue, loop), daemon=True,
+        )
+        stderr_thread = threading.Thread(
+            target=_drain_stderr_thread, args=(process, stderr_lines), daemon=True,
+        )
+        stdout_thread.start()
+        stderr_thread.start()
 
         cancelled = False
         try:
@@ -113,15 +126,10 @@ class SubprocessClient:
         except asyncio.CancelledError:
             cancelled = True
         finally:
-            read_task.cancel()
-            stderr_task.cancel()
-            for t in (read_task, stderr_task):
-                try:
-                    await t
-                except asyncio.CancelledError:
-                    pass
+            stdout_thread.join(timeout=5)
+            stderr_thread.join(timeout=5)
 
-        if cancelled and process.returncode is None:
+        if cancelled and process.poll() is None:
             # Close stdin so the agent gets EOF and can exit cleanly (avoids
             # CLIConnectionError "ProcessTransport is not ready for writing").
             if process.stdin:
@@ -130,10 +138,12 @@ class SubprocessClient:
                 except Exception:
                     pass
             try:
-                await asyncio.wait_for(process.wait(), timeout=3.0)
-            except asyncio.TimeoutError:
+                process.wait(timeout=3.0)
+            except subprocess.TimeoutExpired:
                 process.terminate()
-        await process.wait()
+                process.wait()
+        else:
+            process.wait()
 
         if process.returncode and process.returncode != 0 and not cancelled:
             stderr_text = "\n".join(stderr_lines).strip()

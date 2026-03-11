@@ -1,6 +1,6 @@
 # agentchat
 
-Chat application with Claude Agent SDK for intelligence, session management and sandbox orchestration (Subprocess, Modal, or Firecracker) using FastAPI, and a React (powered by Vite) frontend.
+Chat application with Claude Agent SDK for intelligence, session management and sandbox orchestration (Subprocess or Modal) using FastAPI, and a React (powered by Vite) frontend.
 
 ![Demo](assets/demo.gif)
 
@@ -32,14 +32,14 @@ Chat application with Claude Agent SDK for intelligence, session management and 
 └──────┬───────────────────────┬───────────────────────────┘
        │                       │
        ▼                       ▼
-┌─────────────┐      ┌─────────────────────────────────────┐
-│  PostgreSQL │      │            Sandbox                  │
-│  (sessions, │      │                                     │
-│   messages, │      │  ┌──────────┐ ┌───────┐ ┌────────┐  │
-│  artifacts) │      │  │Subprocess│ │ Modal │ │  Fire- │  │
-└─────────────┘      │  └────┬─────┘ └───┬───┘ │cracker │  │
-                     │       └───────────┴──┬──┘└───┬────┘  │
-                     └──────────────────────┼───────┘───────┘
+┌─────────────┐      ┌──────────────────────────────────────┐
+│  PostgreSQL │      │            Sandbox                   │
+│  (sessions, │      │                                      │
+│   messages, │      │  ┌──────────┐ ┌───────┐              │
+│  artifacts) │      │  │Subprocess│ │ Modal │              │
+└─────────────┘      │  └────┬─────┘ └───┬───┘              │
+                     │       └───────────┴──┬───────────────┘
+                     └──────────────────────┘
                                             │
                                             ▼
                              ┌──────────────────────┐
@@ -61,9 +61,6 @@ Chat application with Claude Agent SDK for intelligence, session management and 
 - **api/** — FastAPI backend (Python, PostgreSQL, MinIO, SSE chat, sessions)
 - **web/** — React + Vite + TypeScript frontend
 - **agent/** — Agent configuration and tooling (Claude Agent SDK)
-- **orchestrator/** — Firecracker VM orchestrator service
-- **infra/** — Terraform infrastructure (AWS, for Firecracker backend)
-- **scripts/** — Helper scripts for building Firecracker rootfs and kernel
 
 ## Prerequisites
 
@@ -117,7 +114,7 @@ MINIO_ENDPOINT=localhost:9000
 MINIO_ACCESS_KEY=minioadmin
 MINIO_SECRET_KEY=minioadmin
 
-# Sandbox backend — choose: subprocess | modal | firecracker
+# Sandbox backend — choose: subprocess | modal
 SANDBOX_BACKEND=subprocess
 ```
 
@@ -143,59 +140,6 @@ Agents run in isolated containers on [Modal](https://modal.com).
 SANDBOX_BACKEND=modal
 MODAL_TOKEN_ID=your-token-id
 MODAL_TOKEN_SECRET=your-token-secret
-```
-
-### Firecracker (microVMs on AWS)
-
-Agents run in isolated Firecracker microVMs. Requires deploying AWS infrastructure and the orchestrator service. Must be run on Linux with KVM support.
-
-**Step 1 — Deploy AWS infrastructure:**
-
-```bash
-cd infra/terraform
-terraform init
-terraform apply
-```
-
-This provisions EC2 (bare-metal for KVM), VPC, IAM, S3, and security groups in `eu-west-1`.
-
-**Step 2 — Build a rootfs from the agent Docker image:**
-
-```bash
-# Run on Linux with Docker and root access
-./scripts/build-rootfs.sh <your-agent-docker-image> ./build/rootfs.ext4
-
-# Example
-./scripts/build-rootfs.sh ghcr.io/your-org/agent:latest ./build/rootfs.ext4
-```
-
-**Step 3 — Upload rootfs to S3:**
-
-```bash
-./scripts/upload-rootfs.sh ./build/rootfs.ext4 s3://your-bucket/rootfs.ext4
-```
-
-**Step 4 — (Optional) Build a Linux kernel:**
-
-```bash
-./scripts/build-kernel.sh
-```
-
-A pre-built `vmlinux` compatible with Firecracker can also be used.
-
-**Step 5 — Run the orchestrator on the EC2 instance:**
-
-```bash
-cd orchestrator
-uv run uvicorn main:app --host 0.0.0.0 --port 8000
-```
-
-**Step 6 — Configure `api/.env`:**
-
-```env
-SANDBOX_BACKEND=firecracker
-FIRECRACKER_ORCHESTRATOR_URL=http://<ec2-ip>:8000
-FIRECRACKER_API_KEY=your-api-key
 ```
 
 ## Commands

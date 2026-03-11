@@ -168,6 +168,7 @@ async def run():
         resume=sdk_session_id,
         include_partial_messages=True,
         mcp_servers={"artifact_tools": artifact_server},
+        setting_sources=['project'], ## ["user", "project", "local"] to load all settings
     )
 
     try:

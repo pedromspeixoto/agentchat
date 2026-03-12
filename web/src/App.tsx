@@ -85,7 +85,7 @@ const KIND_META: Record<ArtifactKind, { label: string; color: string; icon: Reac
 };
 
 function ArtifactCard({ artifact }: { artifact: Artifact }) {
-  const meta = KIND_META[artifact.kind];
+  const meta = KIND_META[artifact.kind] ?? KIND_META['other'];
   return (
     <div className="artifact-card">
       <div className="artifact-icon" style={{ color: meta.color, background: `${meta.color}14` }}>
@@ -159,7 +159,7 @@ function ArtifactsPanel({ artifacts, onClose }: { artifacts: Artifact[]; onClose
 // ── Artifact inline card (appears in chat feed when an artifact is created) ───
 
 function ArtifactInlineCard({ artifact, onView }: { artifact: Artifact; onView: () => void }) {
-  const meta = KIND_META[artifact.kind];
+  const meta = KIND_META[artifact.kind] ?? KIND_META['other'];
   return (
     <div className="artifact-inline-card">
       <div className="artifact-inline-shimmer" />
@@ -228,7 +228,6 @@ function ChatItemView({ item }: { item: ChatItem }) {
   if (item.type === "tool_call") {
     return <div className="tool-row"><ToolCallCard name={item.name} input={item.input} /></div>;
   }
-  if (item.type === "artifact") return null;
   return (
     <div className={`message ${item.role}`}>
       <div className="message-role">
@@ -307,8 +306,14 @@ export default function App() {
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const abortRef = useRef<AbortController | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Always-current ref for activeId — read by stream callbacks to avoid stale closures
+  const activeIdRef = useRef<string | null>(null);
+  useEffect(() => { activeIdRef.current = activeId; }, [activeId]);
+
+  // In-flight streams keyed by session ID — lets background streams run without aborting
+  const streamsRef = useRef<Map<string, AbortController>>(new Map());
 
   useEffect(() => { getSessions().then(setSessions).catch(console.error); }, []);
 
@@ -358,7 +363,6 @@ export default function App() {
   };
 
   const goToLanding = () => {
-    abortRef.current?.abort();
     setActiveId(null);
     setChatItems([]);
     setArtifacts([]);
@@ -372,7 +376,6 @@ export default function App() {
   };
 
   const startNewChat = () => {
-    abortRef.current?.abort();
     setActiveId(null);
     setChatItems([]);
     setArtifacts([]);
@@ -390,6 +393,8 @@ export default function App() {
     setChatStarted(true);
     setStreamingText("");
     setError(null);
+    // If this session has an active background stream, show the streaming indicator
+    setIsStreaming(streamsRef.current.has(id));
   };
 
   const send = useCallback(async () => {
@@ -409,56 +414,101 @@ export default function App() {
     const tempId = `opt-${Date.now()}`;
     setChatItems((prev) => [...prev, { id: tempId, type: "text", role: "user", content: prompt, created_at: new Date().toISOString(), chat_id: activeId ?? "", attachments }]);
 
+    // Capture the session at send-time to decide whether to update activeId on new sessions
+    const sendingFromSessionId = activeId;
     const abort = new AbortController();
-    abortRef.current = abort;
     let resolvedSessionId = activeId;
+    // streamSessionId is set once we know which session this stream belongs to
+    let streamSessionId: string | null = activeId;
+
+    // Only update visible state if the user is still looking at this stream's session
+    const isActiveSession = () => activeIdRef.current === streamSessionId;
 
     try {
       await streamChat(prompt, activeId, {
         onSessionStart(sessionId, isNew) {
           resolvedSessionId = sessionId;
+          streamSessionId = sessionId;
+          streamsRef.current.set(sessionId, abort);
+
           if (isNew) {
             setSessions((prev) => [{ id: sessionId, title: prompt.slice(0, 50) + (prompt.length > 50 ? "…" : ""), created_at: new Date().toISOString(), updated_at: new Date().toISOString() }, ...prev]);
-            setActiveId(sessionId);
+            // Only switch to the new session if the user hasn't navigated away
+            if (activeIdRef.current === sendingFromSessionId) {
+              setActiveId(sessionId);
+            }
             setChatItems((prev) => prev.map((m) => m.id === tempId && m.type === "text" ? { ...m, chat_id: sessionId } : m));
           } else {
             setSessions((prev) => prev.map((s) => s.id === sessionId ? { ...s, updated_at: new Date().toISOString() } : s));
           }
         },
-        onTextDelta(delta) { setStreamingText((t) => t + delta); },
+        onTextDelta(delta) {
+          if (isActiveSession()) setStreamingText((t) => t + delta);
+        },
         onAssistantMessage(text: string, toolCalls: ToolCall[]) {
-          setChatItems((prev) => {
-            const newItems: ChatItem[] = [
-              ...toolCalls.map((tc) => ({ id: tc.id, type: "tool_call" as const, name: tc.name, input: tc.input, created_at: new Date().toISOString() })),
-              ...(text ? [{ id: `msg-${Date.now()}-${Math.random()}`, type: "text" as const, role: "assistant" as const, content: text, created_at: new Date().toISOString(), chat_id: resolvedSessionId ?? "" }] : []),
-            ];
-            return [...prev, ...newItems];
-          });
-          setStreamingText("");
+          if (isActiveSession()) {
+            setChatItems((prev) => {
+              const newItems: ChatItem[] = [
+                ...toolCalls.map((tc) => ({ id: tc.id, type: "tool_call" as const, name: tc.name, input: tc.input, created_at: new Date().toISOString() })),
+                ...(text ? [{ id: `msg-${Date.now()}-${Math.random()}`, type: "text" as const, role: "assistant" as const, content: text, created_at: new Date().toISOString(), chat_id: resolvedSessionId ?? "" }] : []),
+              ];
+              return [...prev, ...newItems];
+            });
+            setStreamingText("");
+          }
         },
         onArtifact(artifact) {
-          setArtifacts((prev) => [...prev, artifact]);
-          setCanvasOpen(true);
-          setChatItems((prev) => [...prev, {
-            id: `artifact-${artifact.id}`,
-            type: "artifact" as const,
-            artifact,
-            created_at: artifact.created_at,
-          }]);
+          if (isActiveSession()) {
+            setArtifacts((prev) => [...prev, artifact]);
+            setCanvasOpen(true);
+            setChatItems((prev) => [...prev, {
+              id: `artifact-${artifact.id}`,
+              type: "artifact" as const,
+              artifact,
+              created_at: artifact.created_at,
+            }]);
+          }
         },
         onDone() {
-          setStreamingText((t) => {
-            if (t) setChatItems((prev) => [...prev, { id: `msg-${Date.now()}`, type: "text", role: "assistant", content: t, created_at: new Date().toISOString(), chat_id: resolvedSessionId ?? "" }]);
-            return "";
-          });
-          setIsStreaming(false);
+          if (streamSessionId) streamsRef.current.delete(streamSessionId);
+
+          if (isActiveSession()) {
+            // Still on this session — commit any trailing streaming text and clear state
+            setStreamingText((t) => {
+              if (t) setChatItems((prev) => [...prev, { id: `msg-${Date.now()}`, type: "text", role: "assistant", content: t, created_at: new Date().toISOString(), chat_id: resolvedSessionId ?? "" }]);
+              return "";
+            });
+            setIsStreaming(false);
+          } else {
+            // Completed in background — the server's BackgroundTask has saved the message.
+            // The useEffect on activeId will reload messages when the user returns to this session.
+            setIsStreaming((current) => {
+              // Only clear isStreaming if the user switched to a different session that
+              // itself has no active stream.
+              const currentActive = activeIdRef.current;
+              if (currentActive && !streamsRef.current.has(currentActive)) return false;
+              return current;
+            });
+          }
         },
-        onError(message) { setError(message); setStreamingText(""); setIsStreaming(false); },
+        onError(message) {
+          if (streamSessionId) streamsRef.current.delete(streamSessionId);
+          if (isActiveSession()) {
+            setError(message);
+            setStreamingText("");
+            setIsStreaming(false);
+          }
+        },
       }, abort.signal, filesToSend);
     } catch (err) {
-      if ((err as Error).name !== "AbortError") setError((err as Error).message ?? "Something went wrong");
-      setStreamingText("");
-      setIsStreaming(false);
+      if (streamSessionId) streamsRef.current.delete(streamSessionId);
+      if ((err as Error).name !== "AbortError" && isActiveSession()) {
+        setError((err as Error).message ?? "Something went wrong");
+      }
+      if (isActiveSession()) {
+        setStreamingText("");
+        setIsStreaming(false);
+      }
     }
   }, [input, isStreaming, activeId, pendingFiles]);
 
@@ -466,6 +516,9 @@ export default function App() {
     if (!deleteTarget) return;
     const { id } = deleteTarget;
     setDeleteTarget(null);
+    // Cancel any in-flight stream for this session before deleting
+    streamsRef.current.get(id)?.abort();
+    streamsRef.current.delete(id);
     await deleteSession(id);
     setSessions((prev) => prev.filter((s) => s.id !== id));
     if (activeId === id) { setActiveId(null); setChatItems([]); setArtifacts([]); setChatStarted(false); setCanvasOpen(false); }
@@ -503,10 +556,15 @@ export default function App() {
           {sessions.length === 0 ? (
             <div className="sidebar-empty">No conversations yet.<br />Start one above.</div>
           ) : sessions.map((s) => (
-            <div key={s.id} className={`session-item${s.id === activeId ? " active" : ""}`} onClick={() => selectSession(s.id)}>
+            <div key={s.id} className={`session-item${s.id === activeId ? " active" : ""}${streamsRef.current.has(s.id) && s.id !== activeId ? " streaming-bg" : ""}`} onClick={() => selectSession(s.id)}>
               <div className="session-info">
                 <div className="session-name">{s.title ?? "Untitled"}</div>
-                <div className="session-meta">{formatDate(s.updated_at)}</div>
+                <div className="session-meta">
+                  {streamsRef.current.has(s.id) && s.id !== activeId
+                    ? <><span className="session-streaming-dot" />Responding…</>
+                    : formatDate(s.updated_at)
+                  }
+                </div>
               </div>
               <button className="btn-delete" onClick={(e) => { e.stopPropagation(); setDeleteTarget({ id: s.id, title: s.title ?? "Untitled" }); }} title="Delete">
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -640,15 +698,15 @@ function Landing({ onStart }: { onStart: () => void }) {
       <div className="landing-bg-glow" />
       <div className="landing-grid" />
       <div className="landing-inner">
-        <div className="landing-badge">
-          <span className="landing-badge-dot" />
-          Powered by Claude AI
-        </div>
         <h1 className="landing-headline">
           <span className="headline-light">Your</span>
           <span className="headline-strong">Agent</span>
           <span className="headline-outline">Chat</span>
         </h1>
+        <div className="landing-badge">
+          <span className="landing-badge-dot" />
+          Powered by Claude Agent SDK
+        </div>
         <p className="landing-sub">
           A powerful chat interface powered by the Claude Agent SDK.<br />
           Sessions, tools, artifacts, streaming — all wired up.

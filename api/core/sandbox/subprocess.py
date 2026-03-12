@@ -101,8 +101,8 @@ class SubprocessClient:
         if history:
             (workspace_dir / "history.txt").write_text(history, encoding="utf-8")
         resolved_env["AGENT_WORKSPACE"] = str(workspace_dir)
-        if sdk_session_id:
-            resolved_env["SDK_SESSION_ID"] = sdk_session_id
+        #if sdk_session_id:
+        #    resolved_env["SDK_SESSION_ID"] = sdk_session_id
 
         cmd = ["uv", "run", "python", "run_agent.py"]
         logger.info(f"Executing: {' '.join(cmd)} in {AGENT_DIR}")

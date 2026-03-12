@@ -100,8 +100,8 @@ class ModalClient:
 
         if sandbox is None:
             env = {"PYTHONUNBUFFERED": "1"}
-            if sdk_session_id:
-                env["SDK_SESSION_ID"] = sdk_session_id
+            #if sdk_session_id:
+            #    env["SDK_SESSION_ID"] = sdk_session_id
 
             secret = modal.Secret.from_dict({**env_vars, **env}) if (env_vars or env) else None
             sandbox = await modal.Sandbox.create.aio(

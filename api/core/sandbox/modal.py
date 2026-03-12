@@ -119,6 +119,7 @@ class ModalClient:
         idle_timeout: int = DEFAULT_IDLE_TIMEOUT,
         sdk_session_id: str | None = None,
         history: str | None = None,
+        files: list[tuple[str, bytes]] | None = None,
     ) -> AsyncIterator[dict]:
         if command is None:
             command = ["python", "/app/run_agent.py"]
@@ -126,10 +127,30 @@ class ModalClient:
         await self.initialize()
 
         try:
+            # Write uploaded files and augment prompt
+            if files:
+                file_lines = []
+                for filename, content in files:
+                    file_lines.append(f"- uploads/{filename} ({len(content)} bytes)")
+                prompt = prompt + (
+                    "\n\nThe user uploaded the following files along with their message:\n"
+                    + "\n".join(file_lines)
+                    + "\n\nYou can read these files using the Read tool at the paths shown above."
+                )
+
             sandbox = await self._get_or_create_sandbox(
                 session_id, image_url, prompt, env_vars, sdk_session_id,
                 timeout, idle_timeout,
             )
+
+            # Write uploaded files to sandbox
+            if files:
+                await sandbox.exec.aio("mkdir", "-p", "/workspace/uploads")
+                for filename, content in files:
+                    f = await sandbox.open.aio(f"/workspace/uploads/{filename}", "wb")
+                    await f.write.aio(content)
+                    await f.close.aio()
+
             if history:
                 hist_file = await sandbox.open.aio("/workspace/history.txt", "w")
                 await hist_file.write.aio(history)

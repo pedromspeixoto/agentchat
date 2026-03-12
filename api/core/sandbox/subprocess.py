@@ -68,6 +68,7 @@ class SubprocessClient:
         idle_timeout: int = 120,
         sdk_session_id: str | None = None,
         history: str | None = None,
+        files: list[tuple[str, bytes]] | None = None,
     ) -> AsyncIterator[dict]:
         resolved_env = os.environ.copy()
         # Don't inherit API's venv so uv run in agent/ uses agent's .venv (avoids uv warning)
@@ -80,6 +81,22 @@ class SubprocessClient:
 
         workspace_dir = AGENT_DIR / "workspace" / session_id
         workspace_dir.mkdir(parents=True, exist_ok=True)
+
+        # Write uploaded files and augment prompt
+        if files:
+            uploads_dir = workspace_dir / "uploads"
+            uploads_dir.mkdir(exist_ok=True)
+            file_lines = []
+            for filename, content in files:
+                dest = uploads_dir / filename
+                dest.write_bytes(content)
+                file_lines.append(f"- {dest} ({len(content)} bytes)")
+            prompt = prompt + (
+                "\n\nThe user uploaded the following files along with their message:\n"
+                + "\n".join(file_lines)
+                + "\n\nYou can read these files using the Read tool at the absolute paths shown above."
+            )
+
         (workspace_dir / "prompt.txt").write_text(prompt, encoding="utf-8")
         if history:
             (workspace_dir / "history.txt").write_text(history, encoding="utf-8")

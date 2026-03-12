@@ -29,6 +29,7 @@ class SandboxClient(Protocol):
         idle_timeout: int = 120,
         sdk_session_id: str | None = None,
         history: str | None = None,
+        files: list[tuple[str, bytes]] | None = None,
     ) -> AsyncIterator[dict]: ...
 
     async def get_file(self, session_id: str, path: str) -> bytes:

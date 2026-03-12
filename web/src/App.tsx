@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import type { Session, Message, ChatItem, Artifact, ArtifactKind } from "./types";
+import type { Session, Message, ChatItem, Artifact, ArtifactKind, Attachment } from "./types";
 import { getSessions, getMessages, getArtifacts, deleteSession, streamChat } from "./api";
 import type { ToolCall } from "./api";
 
 function toTextItem(m: Message): Extract<ChatItem, { type: "text" }> {
-  return { id: m.id, type: "text", role: m.role, content: m.content, created_at: m.created_at, chat_id: m.chat_id };
+  return { id: m.id, type: "text", role: m.role, content: m.content, created_at: m.created_at, chat_id: m.chat_id, attachments: m.attachments };
 }
 
 function formatDate(iso: string) {
@@ -234,6 +234,19 @@ function ChatItemView({ item }: { item: ChatItem }) {
         {item.role === "user" ? <><span className="role-dot user-dot" />You</> : <><span className="role-dot ai-dot" />AgentChat</>}
       </div>
       <div className="message-bubble">{item.content}</div>
+      {item.attachments && item.attachments.length > 0 && (
+        <div className="message-attachments">
+          {item.attachments.map((a, i) => (
+            <span key={i} className="attachment-pill">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+              </svg>
+              <span className="attachment-pill-name">{a.name}</span>
+              <span className="attachment-pill-size">{formatBytes(a.size)}</span>
+            </span>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -288,8 +301,12 @@ export default function App() {
   const [canvasOpen, setCanvasOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<{ id: string; title: string } | null>(null);
 
+  const [pendingFiles, setPendingFiles] = useState<File[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
+
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Always-current ref for activeId — read by stream callbacks to avoid stale closures
   const activeIdRef = useRef<string | null>(null);
@@ -318,6 +335,33 @@ export default function App() {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); send(); }
   };
 
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = Array.from(e.target.files || []);
+    setPendingFiles((prev) => [...prev, ...selected].slice(0, 5));
+    e.target.value = "";
+  };
+
+  const removeFile = (index: number) => {
+    setPendingFiles((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    const dropped = Array.from(e.dataTransfer.files);
+    setPendingFiles((prev) => [...prev, ...dropped].slice(0, 5));
+  };
+
   const goToLanding = () => {
     setActiveId(null);
     setChatItems([]);
@@ -326,6 +370,7 @@ export default function App() {
     setIsStreaming(false);
     setError(null);
     setInput("");
+    setPendingFiles([]);
     setChatStarted(false);
     setCanvasOpen(false);
   };
@@ -338,6 +383,7 @@ export default function App() {
     setIsStreaming(false);
     setError(null);
     setInput("");
+    setPendingFiles([]);
     setChatStarted(true);
     setTimeout(() => textareaRef.current?.focus(), 50);
   };
@@ -355,14 +401,18 @@ export default function App() {
     const prompt = input.trim();
     if (!prompt || isStreaming) return;
 
+    const filesToSend = pendingFiles.length > 0 ? [...pendingFiles] : undefined;
+    const attachments: Attachment[] | undefined = filesToSend?.map((f) => ({ name: f.name, size: f.size }));
+
     setInput("");
+    setPendingFiles([]);
     if (textareaRef.current) textareaRef.current.style.height = "auto";
     setError(null);
     setStreamingText("");
     setIsStreaming(true);
 
     const tempId = `opt-${Date.now()}`;
-    setChatItems((prev) => [...prev, { id: tempId, type: "text", role: "user", content: prompt, created_at: new Date().toISOString(), chat_id: activeId ?? "" }]);
+    setChatItems((prev) => [...prev, { id: tempId, type: "text", role: "user", content: prompt, created_at: new Date().toISOString(), chat_id: activeId ?? "", attachments }]);
 
     // Capture the session at send-time to decide whether to update activeId on new sessions
     const sendingFromSessionId = activeId;
@@ -449,7 +499,7 @@ export default function App() {
             setIsStreaming(false);
           }
         },
-      }, abort.signal);
+      }, abort.signal, filesToSend);
     } catch (err) {
       if (streamSessionId) streamsRef.current.delete(streamSessionId);
       if ((err as Error).name !== "AbortError" && isActiveSession()) {
@@ -460,7 +510,7 @@ export default function App() {
         setIsStreaming(false);
       }
     }
-  }, [input, isStreaming, activeId]);
+  }, [input, isStreaming, activeId, pendingFiles]);
 
   const confirmDelete = async () => {
     if (!deleteTarget) return;
@@ -584,8 +634,34 @@ export default function App() {
                 <div ref={bottomRef} />
               </div>
 
-              <div className="input-area">
+              <div className="input-area" onDragOver={handleDragOver} onDragLeave={handleDragLeave} onDrop={handleDrop}>
+                {isDragging && (
+                  <div className="drop-overlay">
+                    <span>Drop files here</span>
+                  </div>
+                )}
+                {pendingFiles.length > 0 && (
+                  <div className="file-chips">
+                    {pendingFiles.map((f, i) => (
+                      <span key={i} className="file-chip">
+                        <span className="file-chip-name">{f.name}</span>
+                        <span className="file-chip-size">{formatBytes(f.size)}</span>
+                        <button className="file-chip-remove" onClick={() => removeFile(i)} title="Remove file">
+                          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                          </svg>
+                        </button>
+                      </span>
+                    ))}
+                  </div>
+                )}
+                <input type="file" multiple ref={fileInputRef} onChange={handleFileSelect} style={{ display: "none" }} />
                 <div className="input-wrapper">
+                  <button className="btn-attach" onClick={() => fileInputRef.current?.click()} disabled={isStreaming} title="Attach files">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
+                    </svg>
+                  </button>
                   <textarea ref={textareaRef} rows={1} placeholder="Ask anything…" value={input} onChange={handleInputChange} onKeyDown={handleKeyDown} disabled={isStreaming} />
                   <button className="btn-send" onClick={send} disabled={isStreaming || !input.trim()}>
                     {isStreaming ? <span className="btn-spinner" /> : (
@@ -595,7 +671,7 @@ export default function App() {
                     )}
                   </button>
                 </div>
-                <div className="input-hint">Enter to send · Shift+Enter for new line</div>
+                <div className="input-hint">Enter to send · Shift+Enter for new line · Drag or click to attach files</div>
               </div>
             </>
           ) : (

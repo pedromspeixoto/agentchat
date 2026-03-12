@@ -12,7 +12,10 @@ export async function getMessages(sessionId: string): Promise<Message[]> {
   const r = await fetch(`${BASE}/sessions/${sessionId}/messages`);
   if (!r.ok) throw new Error("Failed to load messages");
   const data = await r.json();
-  return data.messages as Message[];
+  return (data.messages as any[]).map((m) => ({
+    ...m,
+    attachments: m.metadata?.attachments,
+  })) as Message[];
 }
 
 export async function deleteSession(sessionId: string): Promise<void> {
@@ -46,11 +49,17 @@ export async function streamChat(
   sessionId: string | null,
   callbacks: StreamCallbacks,
   signal?: AbortSignal,
+  files?: File[],
 ): Promise<void> {
+  const formData = new FormData();
+  formData.append("prompt", prompt);
+  if (sessionId) formData.append("session_id", sessionId);
+  if (files) {
+    for (const file of files) formData.append("files", file);
+  }
   const response = await fetch(`${BASE}/chat/`, {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ prompt, session_id: sessionId }),
+    body: formData,
     signal,
   });
 

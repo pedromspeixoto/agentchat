@@ -1,11 +1,12 @@
 """Chat API routes - streams Claude Agent SDK events via SSE."""
 import json
+import os
 import uuid
 from datetime import datetime, timezone
 from dataclasses import dataclass
-from typing import Any, NotRequired, TypedDict
+from typing import Any, NotRequired, Optional, TypedDict
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
 from fastapi.sse import EventSourceResponse, format_sse_event
 from starlette.background import BackgroundTask
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,10 +18,20 @@ from core.sandbox import get_sandbox_client
 from core.logging import get_logger
 from models.chat import CHAT_TITLE_PLACEHOLDER, ChatSession, ChatMessage, ChatEvent, ChatUsage, ChatArtifact
 from core.storage import upload_artifact
-from routes.schemas.chat import ChatRequest
 
 router = APIRouter()
 logger = get_logger(__name__)
+
+MAX_FILE_SIZE = 10 * 1024 * 1024      # 10 MB per file
+MAX_TOTAL_SIZE = 50 * 1024 * 1024     # 50 MB total
+MAX_FILE_COUNT = 5
+ALLOWED_EXTENSIONS = {
+    ".txt", ".md", ".csv", ".json", ".xml", ".yaml", ".yml",
+    ".log", ".py", ".js", ".ts", ".html", ".css", ".sql", ".sh",
+    ".toml", ".ini", ".cfg",
+    ".pdf", ".xlsx", ".xls", ".doc", ".docx",
+    ".png", ".jpg", ".jpeg", ".gif", ".bmp", ".svg", ".webp",
+}
 
 
 # Local mirrors of the SDK types — the API server processes raw dicts from the
@@ -132,14 +143,45 @@ async def _get_or_create_session(
 
 
 @router.post("/")
-async def chat(request: ChatRequest, db: AsyncSession = Depends(get_db)):
+async def chat(
+    prompt: str = Form(..., min_length=1),
+    session_id: Optional[str] = Form(None),
+    files: list[UploadFile] = File(default=[]),
+    db: AsyncSession = Depends(get_db),
+):
     """Execute agent and forward Claude SDK events via SSE."""
+
+    # Validate session_id is UUID if provided
+    if session_id is not None:
+        try:
+            uuid.UUID(session_id)
+        except ValueError:
+            raise HTTPException(status_code=422, detail="session_id must be a valid UUID")
+
+    # Validate uploaded files
+    if len(files) > MAX_FILE_COUNT:
+        raise HTTPException(status_code=422, detail=f"Maximum {MAX_FILE_COUNT} files allowed")
+
+    files_data: list[tuple[str, bytes]] = []
+    total_size = 0
+    for f in files:
+        filename = os.path.basename(f.filename or "upload")
+        ext = os.path.splitext(filename)[1].lower()
+        if ext not in ALLOWED_EXTENSIONS:
+            raise HTTPException(status_code=422, detail=f"File type '{ext}' is not allowed")
+        content = await f.read()
+        if len(content) > MAX_FILE_SIZE:
+            raise HTTPException(status_code=422, detail=f"File '{filename}' exceeds {MAX_FILE_SIZE // (1024*1024)}MB limit")
+        total_size += len(content)
+        if total_size > MAX_TOTAL_SIZE:
+            raise HTTPException(status_code=422, detail=f"Total upload size exceeds {MAX_TOTAL_SIZE // (1024*1024)}MB limit")
+        files_data.append((filename, content))
 
     agent_config = load_agent_config()
     if not agent_config.image:
         raise HTTPException(status_code=400, detail="Agent has no image configured")
 
-    session, is_new = await _get_or_create_session(db, request.session_id, request.prompt)
+    session, is_new = await _get_or_create_session(db, session_id, prompt)
     session_id = str(session.id)
     sdk_session_id = session.sdk_session_id
 
@@ -157,12 +199,14 @@ async def chat(request: ChatRequest, db: AsyncSession = Depends(get_db)):
                 {"role": m.role, "content": m.content} for m in history_msgs
             ])
 
-    # Save user message immediately
+    # Save user message immediately (with attachment metadata if files were uploaded)
+    attachments_meta = [{"name": fn, "size": len(data)} for fn, data in files_data] if files_data else None
     db.add(ChatMessage(
         id=str(uuid.uuid4()),
         chat_id=session_id,
         role="user",
-        content=request.prompt,
+        content=prompt,
+        message_metadata={"attachments": attachments_meta} if attachments_meta else None,
     ))
     session.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
     await db.commit()
@@ -235,13 +279,14 @@ async def chat(request: ChatRequest, db: AsyncSession = Depends(get_db)):
             async for msg in sandbox.run_agent(
                 session_id=session_id,
                 image_url=agent_config.image,
-                prompt=request.prompt,
+                prompt=prompt,
                 env_vars=env_vars,
                 command=agent_config.command,
                 timeout=agent_config.timeout,
                 idle_timeout=agent_config.idle_timeout,
                 sdk_session_id=sdk_session_id,
                 history=history_json,
+                files=files_data if files_data else None,
             ):
                 msg_type = msg.get("__type", "")
                 parsed = _parse_message(msg)

@@ -5,12 +5,18 @@ export interface Session {
   updated_at: string;
 }
 
+export interface Attachment {
+  name: string;
+  size: number;
+}
+
 export interface Message {
   id: string;
   chat_id: string;
   role: "user" | "assistant";
   content: string;
   created_at: string;
+  attachments?: Attachment[];
 }
 
 export type ChatItem =
@@ -21,6 +27,7 @@ export type ChatItem =
       content: string;
       created_at: string;
       chat_id: string;
+      attachments?: Attachment[];
     }
   | {
       id: string;

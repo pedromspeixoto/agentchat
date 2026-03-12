@@ -31,7 +31,6 @@ class ModalClient:
                     line = line.strip()
                     if not line:
                         continue
-                    logger.error(f"Agent stderr: {line}")
                     asyncio.run_coroutine_threadsafe(
                         queue.put({"__type": "stderr", "content": line}), loop
                     )
@@ -99,12 +98,10 @@ class ModalClient:
             logger.info(f"Sandbox {session_id} not found, creating new")
 
         if sandbox is None:
-            # New container — don't pass SDK_SESSION_ID; the old session doesn't exist here.
-            # TODO - fix the bug where sandbox breaks if the session id is provided to resume
-            # History is provided via history.txt instead.
             env = {"PYTHONUNBUFFERED": "1"}
             #if sdk_session_id:
             #    env["SDK_SESSION_ID"] = sdk_session_id
+
             secret = modal.Secret.from_dict({**env_vars, **env}) if (env_vars or env) else None
             sandbox = await modal.Sandbox.create.aio(
                 name=session_id,
@@ -137,6 +134,7 @@ class ModalClient:
         idle_timeout: int = DEFAULT_IDLE_TIMEOUT,
         sdk_session_id: str | None = None,
         history: str | None = None,
+        files: list[tuple[str, bytes]] | None = None,
     ) -> AsyncIterator[dict]:
         if command is None:
             command = ["python", "/app/run_agent.py"]
@@ -144,10 +142,30 @@ class ModalClient:
         await self.initialize()
 
         try:
+            # Write uploaded files and augment prompt
+            if files:
+                file_lines = []
+                for filename, content in files:
+                    file_lines.append(f"- uploads/{filename} ({len(content)} bytes)")
+                prompt = prompt + (
+                    "\n\nThe user uploaded the following files along with their message:\n"
+                    + "\n".join(file_lines)
+                    + "\n\nYou can read these files using the Read tool at the paths shown above."
+                )
+
             sandbox = await self._get_or_create_sandbox(
                 session_id, image_url, prompt, env_vars, sdk_session_id,
                 timeout, idle_timeout,
             )
+
+            # Write uploaded files to sandbox
+            if files:
+                await sandbox.exec.aio("mkdir", "-p", "/workspace/uploads")
+                for filename, content in files:
+                    f = await sandbox.open.aio(f"/workspace/uploads/{filename}", "wb")
+                    await f.write.aio(content)
+                    await f.close.aio()
+
             if history:
                 hist_file = await sandbox.open.aio("/workspace/history.txt", "w")
                 await hist_file.write.aio(history)

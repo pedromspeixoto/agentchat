@@ -12,7 +12,16 @@ logger = get_logger(__name__)
 AGENT_DIR = Path(__file__).parent.parent.parent / "agent"
 
 ALLOWED_ENV_VARS = {
+    # Direct Anthropic
     "ANTHROPIC_API_KEY",
+    # Azure AI Foundry
+    "CLAUDE_CODE_USE_FOUNDRY",
+    "ANTHROPIC_FOUNDRY_BASE_URL",
+    "ANTHROPIC_FOUNDRY_API_KEY",
+    "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+    "ANTHROPIC_DEFAULT_SONNET_MODEL",
+    "ANTHROPIC_DEFAULT_OPUS_MODEL",
+    # Other tools
     "TAVILY_API_KEY",
 }
 

@@ -31,7 +31,6 @@ class ModalClient:
                     line = line.strip()
                     if not line:
                         continue
-                    logger.error(f"Agent stderr: {line}")
                     asyncio.run_coroutine_threadsafe(
                         queue.put({"__type": "stderr", "content": line}), loop
                     )

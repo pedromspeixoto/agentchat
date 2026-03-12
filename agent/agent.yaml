@@ -4,7 +4,7 @@ description: A simple agent that demonstrates basic Claude Agent SDK capabilitie
 purpose: Demonstrate a basic agent with a Claude workflow and skill.
 
 # Docker registry URL for prebuilt image
-image: docker.io/pedropeixoto6/mobox-claude-hello-world:v1.0.3
+image: docker.io/pedropeixoto6/agentchat-claude-sandbox:96efe3a
 
 # Entrypoint - command to execute in the sandbox
 entrypoint: ["python", "/app/run_agent.py"]
